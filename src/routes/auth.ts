@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
 import { supabase } from "../config/supabase";
+import { requireAuth, AuthedRequest } from "../middleware/auth"; // adjust path if needed
 
 const router = Router();
 
@@ -96,5 +97,48 @@ router.post("/refresh", async (req: Request, res: Response) => {
       .json({ error: "Session expired, please log in again" });
   res.json(session(data.session));
 });
+
+// NEW: change password for the logged-in user
+router.post(
+  "/change-password",
+  requireAuth,
+  async (req: AuthedRequest, res: Response) => {
+    const parsed = z
+      .object({
+        current_password: z.string().min(1),
+        new_password: z.string().min(8).max(72),
+      })
+      .safeParse(req.body);
+    if (!parsed.success)
+      return res
+        .status(400)
+        .json({ error: "New password must be at least 8 characters" });
+
+    const { current_password, new_password } = parsed.data;
+    if (current_password === new_password)
+      return res
+        .status(400)
+        .json({ error: "New password must be different from the current one" });
+
+    const { data: u } = await supabase.auth.admin.getUserById(req.user!.id);
+    const email = u?.user?.email;
+    if (!email) return res.status(400).json({ error: "Account has no email" });
+
+    // Verify the current password. 400 (not 401) so the app doesn't treat it as an expired session.
+    const { error: checkErr } = await authClient().auth.signInWithPassword({
+      email,
+      password: current_password,
+    });
+    if (checkErr)
+      return res.status(400).json({ error: "Current password is incorrect" });
+
+    const { error } = await supabase.auth.admin.updateUserById(req.user!.id, {
+      password: new_password,
+    });
+    if (error) return res.status(400).json({ error: error.message });
+
+    res.json({ ok: true });
+  },
+);
 
 export default router;

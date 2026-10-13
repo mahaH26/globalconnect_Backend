@@ -16,7 +16,6 @@ const createSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 
-// Balance per type for a year: allowance, approved, pending, remaining
 async function getBalance(userId: string, year: number) {
   const { data: policies } = await supabase.from("leave_policies").select("*");
   const { data: reqs } = await supabase
@@ -51,6 +50,68 @@ async function getBalance(userId: string, year: number) {
     },
   );
 }
+
+async function findConflicts(
+  userId: string,
+  start: string,
+  end: string,
+  excludeRequestId?: string,
+) {
+  const { data: me } = await supabase
+    .from("profiles")
+    .select("department_id")
+    .eq("id", userId)
+    .maybeSingle();
+  if (!me?.department_id) return { team_size: 1, conflicts: [] };
+
+  const { data: mates } = await supabase
+    .from("profiles")
+    .select("id, full_name")
+    .eq("department_id", me.department_id)
+    .neq("id", userId);
+  if (!mates?.length) return { team_size: 1, conflicts: [] };
+
+  const names = new Map(mates.map((m) => [m.id, m.full_name]));
+  let q = supabase
+    .from("leave_requests")
+    .select("id, user_id, leave_type, start_date, end_date, status")
+    .in("user_id", [...names.keys()])
+    .in("status", ["approved", "pending"])
+    .lte("start_date", end)
+    .gte("end_date", start)
+    .order("start_date");
+  if (excludeRequestId) q = q.neq("id", excludeRequestId);
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return {
+    team_size: mates.length + 1,
+    conflicts: (data ?? []).map((r) => ({
+      ...r,
+      full_name: names.get(r.user_id) ?? "Unknown",
+    })),
+  };
+}
+
+const dateRange = z.object({
+  start_date: date,
+  end_date: date,
+});
+
+router.get("/conflicts", async (req: AuthedRequest, res: Response) => {
+  const p = dateRange.safeParse(req.query);
+  if (!p.success || p.data.end_date < p.data.start_date)
+    return res
+      .status(400)
+      .json({ error: "Valid start_date and end_date required" });
+  try {
+    res.json(
+      await findConflicts(req.user!.id, p.data.start_date, p.data.end_date),
+    );
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 router.get("/balance", async (req: AuthedRequest, res: Response) => {
   const year = Number(req.query.year) || new Date().getFullYear();
@@ -115,7 +176,6 @@ router.get("/me", async (req: AuthedRequest, res: Response) => {
   res.json(data);
 });
 
-// Admin: all requests. Filters: status, user_id
 router.get("/", requireManager, async (req: AuthedRequest, res: Response) => {
   let q = supabase
     .from("leave_requests")
@@ -132,13 +192,32 @@ router.get("/", requireManager, async (req: AuthedRequest, res: Response) => {
   res.json(data);
 });
 
-// Admin: leave balance for one employee
 router.get(
   "/balance/:userId",
   requireManager,
   async (req: AuthedRequest, res: Response) => {
     const year = Number(req.query.year) || new Date().getFullYear();
     res.json(await getBalance(String(req.params.userId), year));
+  },
+);
+
+router.get(
+  "/:id/conflicts",
+  requireManager,
+  async (req: AuthedRequest, res: Response) => {
+    const { data: lr } = await supabase
+      .from("leave_requests")
+      .select("id, user_id, start_date, end_date")
+      .eq("id", String(req.params.id))
+      .maybeSingle();
+    if (!lr) return res.status(404).json({ error: "Request not found" });
+    try {
+      res.json(
+        await findConflicts(lr.user_id, lr.start_date, lr.end_date, lr.id),
+      );
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   },
 );
 
