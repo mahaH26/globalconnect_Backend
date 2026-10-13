@@ -13,7 +13,8 @@ import progression from "./routes/progression";
 import notifications from "./routes/notifications";
 import chat from "./routes/chat";
 import insights from "./routes/insights";
-
+import reports from "./routes/reports";
+import locations from "./routes/locations";
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -31,6 +32,8 @@ app.use("/progression", progression);
 app.use("/notifications", notifications);
 app.use("/chat", chat);
 app.use("/insights", insights);
+app.use("/reports", reports);
+app.use("/locations", locations);
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   console.error(err);
