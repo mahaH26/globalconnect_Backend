@@ -9,6 +9,7 @@ router.use(requireAuth, requireManager);
 
 const SELECT = "*, departments(name), progression_levels(name, level_no)";
 const statusEnum = z.enum(["active", "probation", "suspended", "terminated"]);
+const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 // List. Filters: department_id, status, search (name)
 router.get("/", async (req: AuthedRequest, res: Response) => {
@@ -31,10 +32,8 @@ const createSchema = z.object({
   department_id: z.string().uuid().optional(),
   position: z.string().optional(),
   phone: z.string().optional(),
-  joining_date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
+  joining_date: dateStr.optional(),
+  last_working_date: dateStr.optional(),
   employment_status: statusEnum.optional(),
   role: z.enum(["employee", "admin"]).default("employee"),
 });
@@ -78,7 +77,8 @@ const updateSchema = z
     department_id: z.string().uuid().nullable(),
     position: z.string().nullable(),
     phone: z.string().nullable(),
-    joining_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    joining_date: dateStr,
+    last_working_date: dateStr.nullable(),
     employment_status: statusEnum,
     role: z.enum(["employee", "admin"]),
   })
@@ -119,6 +119,21 @@ router.patch("/:id", async (req: AuthedRequest, res: Response) => {
     );
   }
   res.json(data);
+});
+
+// Admin sets a new password for an employee. Supabase Auth hashes it; it is never stored in plain text.
+router.post("/:id/password", async (req: AuthedRequest, res: Response) => {
+  const parsed = z.object({ password: z.string().min(8) }).safeParse(req.body);
+  if (!parsed.success)
+    return res
+      .status(400)
+      .json({ error: "Password must be at least 8 characters" });
+  const { error } = await supabase.auth.admin.updateUserById(
+    String(req.params.id),
+    { password: parsed.data.password },
+  );
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ ok: true });
 });
 
 // "Remove" = deactivate: keeps attendance history, blocks login
