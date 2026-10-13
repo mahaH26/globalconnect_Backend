@@ -12,6 +12,8 @@ import dashboard from "./routes/dashboard";
 import progression from "./routes/progression";
 import notifications from "./routes/notifications";
 import chat from "./routes/chat";
+import insights from "./routes/insights";
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -28,6 +30,7 @@ app.use("/dashboard", dashboard);
 app.use("/progression", progression);
 app.use("/notifications", notifications);
 app.use("/chat", chat);
+app.use("/insights", insights);
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   console.error(err);
