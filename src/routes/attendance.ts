@@ -9,7 +9,7 @@ import {
   toMinutes,
   fmtMinutes,
 } from "../utils/settings";
-import { notifyAdmins } from "../utils/notify";
+import { notifyAdmins, notifyUser } from "../utils/notify";
 
 const router = Router();
 router.use(requireAuth);
@@ -20,11 +20,8 @@ const locationSchema = z.object({
 });
 
 async function nearestOffice(lat: number, lng: number) {
-  const { data: offices, error } = await supabase
-    .from("office_locations")
-    .select("*");
-  if (error || !offices?.length)
-    throw new Error("No office locations configured");
+  const { data: offices } = await supabase.from("office_locations").select("*");
+  if (!offices?.length) return null;
   let best = { office: offices[0], distance: Infinity };
   for (const o of offices) {
     const d = distanceMeters(lat, lng, o.latitude, o.longitude);
@@ -45,6 +42,27 @@ async function addPoints(userId: string, points: number) {
     .eq("id", userId);
 }
 
+async function notifyOutside(
+  user: { id: string; full_name: string },
+  action: "check in" | "check out",
+  distance: number,
+  allowed: number,
+) {
+  const m = Math.round(distance);
+  await notifyAdmins(
+    "Location verification issue",
+    `${user.full_name} ${action === "check in" ? "checked in" : "checked out"} outside the office location, ${m} m away (allowed ${allowed} m).`,
+    "location",
+    user.id,
+  );
+  await notifyUser(
+    user.id,
+    "Outside office location",
+    `You ${action === "check in" ? "checked in" : "checked out"} ${m} m from the office. Your admin has been notified.`,
+    "location",
+  );
+}
+
 router.post("/check-in", async (req: AuthedRequest, res: Response) => {
   const parsed = locationSchema.safeParse(req.body);
   if (!parsed.success)
@@ -54,20 +72,9 @@ router.post("/check-in", async (req: AuthedRequest, res: Response) => {
   const { latitude, longitude } = parsed.data;
   const user = req.user!;
 
-  const { office, distance } = await nearestOffice(latitude, longitude);
-  if (distance > office.radius_m) {
-    await notifyAdmins(
-      "Location verification issue",
-      `${user.full_name} tried to check in ${Math.round(distance)} m from the office (allowed ${office.radius_m} m).`,
-      "location",
-      user.id,
-    );
-    return res.status(403).json({
-      error: "You are not at the office location",
-      distance_m: Math.round(distance),
-      allowed_m: office.radius_m,
-    });
-  }
+  const near = await nearestOffice(latitude, longitude);
+  const distance = near ? near.distance : null;
+  const outside = near ? near.distance > near.office.radius_m : false;
 
   const settings = await getSettings();
   const now = localNow(settings);
@@ -84,7 +91,7 @@ router.post("/check-in", async (req: AuthedRequest, res: Response) => {
       check_in_lat: latitude,
       check_in_lng: longitude,
       distance_m: distance,
-      location_verified: true,
+      location_verified: !outside,
       status: late ? "late" : "present",
       points_awarded: points,
     })
@@ -98,6 +105,8 @@ router.post("/check-in", async (req: AuthedRequest, res: Response) => {
   }
 
   await addPoints(user.id, points);
+  if (outside && near)
+    await notifyOutside(user, "check in", near.distance, near.office.radius_m);
   if (late) {
     await notifyAdmins(
       "Late arrival",
@@ -106,7 +115,11 @@ router.post("/check-in", async (req: AuthedRequest, res: Response) => {
       user.id,
     );
   }
-  res.status(201).json(data);
+  res.status(201).json({
+    ...data,
+    outside_office: outside,
+    distance_m: distance === null ? null : Math.round(distance),
+  });
 });
 
 router.post("/check-out", async (req: AuthedRequest, res: Response) => {
@@ -118,15 +131,8 @@ router.post("/check-out", async (req: AuthedRequest, res: Response) => {
   const { latitude, longitude } = parsed.data;
   const user = req.user!;
 
-  const { office, distance } = await nearestOffice(latitude, longitude);
-  if (distance > office.radius_m) {
-    return res
-      .status(403)
-      .json({
-        error: "You are not at the office location",
-        distance_m: Math.round(distance),
-      });
-  }
+  const near = await nearestOffice(latitude, longitude);
+  const outside = near ? near.distance > near.office.radius_m : false;
 
   const settings = await getSettings();
   const now = localNow(settings);
@@ -156,10 +162,16 @@ router.post("/check-out", async (req: AuthedRequest, res: Response) => {
     .select()
     .single();
   if (error) throw error;
-  res.json(data);
+
+  if (outside && near)
+    await notifyOutside(user, "check out", near.distance, near.office.radius_m);
+  res.json({
+    ...data,
+    outside_office: outside,
+    distance_m: near ? Math.round(near.distance) : null,
+  });
 });
 
-// Today's record for the logged-in user (used by the Home screen)
 router.get("/today", async (req: AuthedRequest, res: Response) => {
   const settings = await getSettings();
   const { date } = localNow(settings);
@@ -173,7 +185,6 @@ router.get("/today", async (req: AuthedRequest, res: Response) => {
   res.json(data ?? null);
 });
 
-// My history: ?from=YYYY-MM-DD&to=YYYY-MM-DD
 router.get("/me", async (req: AuthedRequest, res: Response) => {
   let q = supabase
     .from("attendance")
@@ -189,7 +200,6 @@ router.get("/me", async (req: AuthedRequest, res: Response) => {
   res.json(data);
 });
 
-// Admin: all records. Filters: date, from, to, user_id, department_id, status
 router.get("/", requireManager, async (req: AuthedRequest, res: Response) => {
   let q = supabase
     .from("attendance")

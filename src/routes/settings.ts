@@ -6,7 +6,6 @@ import { requireAuth, requireManager, AuthedRequest } from "../middleware/auth";
 const router = Router();
 router.use(requireAuth);
 
-// Everyone logged in can read the company configuration
 router.get("/", async (_req: AuthedRequest, res: Response) => {
   const [settings, offices, departments, policies, levels] = await Promise.all([
     supabase.from("settings").select("*").eq("id", 1).single(),
@@ -24,7 +23,6 @@ router.get("/", async (_req: AuthedRequest, res: Response) => {
   });
 });
 
-// ---- everything below is admin only ----
 const time = z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/, "Use HH:MM");
 const settingsSchema = z
   .object({
@@ -51,7 +49,6 @@ router.patch("/", requireManager, async (req: AuthedRequest, res: Response) => {
   res.json(data);
 });
 
-// Departments
 router.post(
   "/departments",
   requireManager,
@@ -98,9 +95,43 @@ router.delete(
   },
 );
 
-// Office locations (check-in point + radius)
+// Look up coordinates from an address (OpenStreetMap). Results can be a few hundred metres off.
+router.get(
+  "/geocode",
+  requireManager,
+  async (req: AuthedRequest, res: Response) => {
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (!q) return res.status(400).json({ error: "Address is required" });
+    try {
+      const r = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`,
+        { headers: { "User-Agent": "GlobalConnectPortal/1.0" } },
+      );
+      const list = (await r.json()) as any[];
+      if (!list.length)
+        return res.status(404).json({
+          error:
+            "Address not found. Paste the coordinates from Google Maps instead.",
+        });
+      res.json({
+        latitude: Number(list[0].lat),
+        longitude: Number(list[0].lon),
+        display_name: list[0].display_name,
+      });
+    } catch {
+      res
+        .status(502)
+        .json({
+          error: "Address lookup failed. Enter the coordinates manually.",
+        });
+    }
+  },
+);
+
+// Office locations (address label + check-in point + radius)
 const officeSchema = z.object({
   name: z.string().min(1),
+  address: z.string().max(300).nullable().optional(),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   radius_m: z.number().int().min(10).max(5000),
@@ -151,7 +182,6 @@ router.delete(
   },
 );
 
-// Leave allowances
 router.patch(
   "/leave-policies/:type",
   requireManager,
@@ -174,7 +204,6 @@ router.patch(
   },
 );
 
-// Progression levels (company-defined rules)
 const levelSchema = z.object({
   level_no: z.number().int().min(1),
   name: z.string().min(1),

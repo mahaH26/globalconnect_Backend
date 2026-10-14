@@ -10,51 +10,6 @@ const num = (v: any) =>
   v === null || v === undefined || v === "" || !Number.isFinite(Number(v))
     ? null
     : Number(v);
-const pick = (row: any, keys: string[]) => {
-  for (const k of keys) {
-    const n = num(row[k]);
-    if (n !== null) return n;
-  }
-  return null;
-};
-
-const IN_LAT = [
-  "check_in_lat",
-  "check_in_latitude",
-  "in_lat",
-  "in_latitude",
-  "latitude",
-  "lat",
-];
-const IN_LNG = [
-  "check_in_lng",
-  "check_in_lon",
-  "check_in_longitude",
-  "in_lng",
-  "in_longitude",
-  "longitude",
-  "lng",
-  "lon",
-];
-const OUT_LAT = [
-  "check_out_lat",
-  "check_out_latitude",
-  "out_lat",
-  "out_latitude",
-];
-const OUT_LNG = [
-  "check_out_lng",
-  "check_out_lon",
-  "check_out_longitude",
-  "out_lng",
-  "out_longitude",
-];
-const OFFICE_RADIUS = [
-  "radius_m",
-  "radius",
-  "allowed_radius_m",
-  "allowed_radius",
-];
 
 function distanceM(aLat: number, aLng: number, bLat: number, bLng: number) {
   const R = 6371000;
@@ -76,28 +31,47 @@ const clock = (iso: string | null) =>
       })
     : null;
 
+const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const querySchema = z.object({
+  from: date.optional(),
+  to: date.optional(),
+  date: date.optional(),
+  user_id: z.string().uuid().optional(),
+});
+
 router.get("/map", async (req: AuthedRequest, res: Response) => {
-  const parsed = z
-    .object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })
-    .safeParse(req.query);
+  const parsed = querySchema.safeParse(req.query);
   if (!parsed.success)
-    return res.status(400).json({ error: "date (YYYY-MM-DD) is required" });
-  const date = parsed.data.date;
+    return res.status(400).json({ error: "Invalid filters" });
+  const from = parsed.data.from ?? parsed.data.date;
+  const to = parsed.data.to ?? parsed.data.date ?? from;
+  if (!from || !to)
+    return res.status(400).json({ error: "from and to dates are required" });
+  if (to < from)
+    return res
+      .status(400)
+      .json({ error: "End date must not be before start date" });
 
   const { data: offRows } = await supabase.from("office_locations").select("*");
   const offices = ((offRows ?? []) as any[])
     .map((o) => ({
       name: o.name ?? "Office",
-      lat: pick(o, ["latitude", "lat"]),
-      lng: pick(o, ["longitude", "lng", "lon"]),
-      radius: pick(o, OFFICE_RADIUS),
+      address: o.address ?? null,
+      lat: num(o.latitude),
+      lng: num(o.longitude),
+      radius: num(o.radius_m),
     }))
     .filter((o) => o.lat !== null && o.lng !== null);
 
-  const { data: att, error } = await supabase
+  let q = supabase
     .from("attendance")
     .select("*")
-    .eq("work_date", date);
+    .gte("work_date", from)
+    .lte("work_date", to)
+    .order("work_date", { ascending: false })
+    .limit(2000);
+  if (parsed.data.user_id) q = q.eq("user_id", parsed.data.user_id);
+  const { data: att, error } = await q;
   if (error) return res.status(500).json({ error: error.message });
 
   const ids = [...new Set((att ?? []).map((a: any) => a.user_id))];
@@ -116,8 +90,8 @@ router.get("/map", async (req: AuthedRequest, res: Response) => {
   let missing = 0;
   const points: any[] = [];
   for (const a of (att ?? []) as any[]) {
-    const lat = pick(a, IN_LAT);
-    const lng = pick(a, IN_LNG);
+    const lat = num(a.check_in_lat);
+    const lng = num(a.check_in_lng);
     if (lat === null || lng === null) {
       missing++;
       continue;
@@ -133,23 +107,24 @@ router.get("/map", async (req: AuthedRequest, res: Response) => {
     }
     const p = names.get(a.user_id);
     points.push({
+      id: a.id,
       user_id: a.user_id,
       name: p?.name ?? "Unknown",
       department: p?.dept ?? "-",
+      work_date: String(a.work_date),
       status: a.status,
       check_in: clock(a.check_in),
       check_out: clock(a.check_out),
       lat,
       lng,
-      out_lat: pick(a, OUT_LAT),
-      out_lng: pick(a, OUT_LNG),
       distance_m: nearest,
       within_radius: within,
     });
   }
 
   res.json({
-    date,
+    from,
+    to,
     offices,
     points,
     missing_coordinates: missing,
