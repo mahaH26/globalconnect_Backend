@@ -51,4 +51,25 @@ router.patch("/:id/read", async (req: AuthedRequest, res: Response) => {
   res.json({ ok: true });
 });
 
+// DELETE /notifications  -> clear all of your notifications
+router.delete("/", async (req: AuthedRequest, res: Response) => {
+  const { error } = await supabase
+    .from("notifications")
+    .delete()
+    .eq("user_id", req.user!.id);
+  if (error) throw error;
+  res.json({ ok: true });
+});
+
+// DELETE /notifications/:id  -> delete one of your notifications
+router.delete("/:id", async (req: AuthedRequest, res: Response) => {
+  const { error } = await supabase
+    .from("notifications")
+    .delete()
+    .eq("id", String(req.params.id))
+    .eq("user_id", req.user!.id);
+  if (error) throw error;
+  res.json({ ok: true });
+});
+
 export default router;
