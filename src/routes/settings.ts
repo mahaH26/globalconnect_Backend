@@ -95,7 +95,6 @@ router.delete(
   },
 );
 
-// Look up coordinates from an address (OpenStreetMap). Results can be a few hundred metres off.
 router.get(
   "/geocode",
   requireManager,
@@ -119,16 +118,13 @@ router.get(
         display_name: list[0].display_name,
       });
     } catch {
-      res
-        .status(502)
-        .json({
-          error: "Address lookup failed. Enter the coordinates manually.",
-        });
+      res.status(502).json({
+        error: "Address lookup failed. Enter the coordinates manually.",
+      });
     }
   },
 );
 
-// Office locations (address label + check-in point + radius)
 const officeSchema = z.object({
   name: z.string().min(1),
   address: z.string().max(300).nullable().optional(),

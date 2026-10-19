@@ -38,7 +38,6 @@ export function localNow(s: Settings) {
   };
 }
 
-// Working days between two dates (inclusive), skipping weekend days
 export function countWorkingDays(
   start: string,
   end: string,

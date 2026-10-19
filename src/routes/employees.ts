@@ -11,7 +11,6 @@ const SELECT = "*, departments(name), progression_levels(name, level_no)";
 const statusEnum = z.enum(["active", "probation", "suspended", "terminated"]);
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
-// List. Filters: department_id, status, search (name)
 router.get("/", async (req: AuthedRequest, res: Response) => {
   let q = supabase.from("profiles").select(SELECT).order("full_name");
   const { department_id, status, search } = req.query;
@@ -121,7 +120,6 @@ router.patch("/:id", async (req: AuthedRequest, res: Response) => {
   res.json(data);
 });
 
-// Admin sets a new password for an employee. Supabase Auth hashes it; it is never stored in plain text.
 router.post("/:id/password", async (req: AuthedRequest, res: Response) => {
   const parsed = z.object({ password: z.string().min(8) }).safeParse(req.body);
   if (!parsed.success)
@@ -136,7 +134,6 @@ router.post("/:id/password", async (req: AuthedRequest, res: Response) => {
   res.json({ ok: true });
 });
 
-// "Remove" = deactivate: keeps attendance history, blocks login
 router.delete("/:id", async (req: AuthedRequest, res: Response) => {
   const id = String(req.params.id);
   if (id === req.user!.id)

@@ -16,7 +16,6 @@ export async function notifyUser(
   });
 }
 
-// Sends the same notification to every active admin (except the person it is about)
 export async function notifyAdmins(
   title: string,
   body: string,

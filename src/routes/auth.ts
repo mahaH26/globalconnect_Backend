@@ -2,11 +2,10 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
 import { supabase } from "../config/supabase";
-import { requireAuth, AuthedRequest } from "../middleware/auth"; // adjust path if needed
+import { requireAuth, AuthedRequest } from "../middleware/auth";
 
 const router = Router();
 
-// Separate client with the PUBLISHABLE key, used only to sign users in.
 function authClient() {
   const key = process.env.SUPABASE_PUBLISHABLE_KEY;
   if (!key) throw new Error("SUPABASE_PUBLISHABLE_KEY is missing in .env");
@@ -98,7 +97,6 @@ router.post("/refresh", async (req: Request, res: Response) => {
   res.json(session(data.session));
 });
 
-// NEW: change password for the logged-in user
 router.post(
   "/change-password",
   requireAuth,
@@ -124,7 +122,6 @@ router.post(
     const email = u?.user?.email;
     if (!email) return res.status(400).json({ error: "Account has no email" });
 
-    // Verify the current password. 400 (not 401) so the app doesn't treat it as an expired session.
     const { error: checkErr } = await authClient().auth.signInWithPassword({
       email,
       password: current_password,

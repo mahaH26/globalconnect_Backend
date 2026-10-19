@@ -1,5 +1,3 @@
-// Date helpers (all dates are 'YYYY-MM-DD' strings in company-local time)
-
 export function eachDate(start: string, end: string): string[] {
   const out: string[] = [];
   const d = new Date(`${start}T00:00:00Z`);
@@ -20,7 +18,6 @@ export function lastDayOfMonth(month: string): string {
   return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0")}`;
 }
 
-// Whole months between two dates
 export function monthsBetween(from: string, to: string): number {
   const a = new Date(`${from}T00:00:00Z`);
   const b = new Date(`${to}T00:00:00Z`);

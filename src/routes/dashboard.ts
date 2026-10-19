@@ -6,7 +6,6 @@ import { getSettings, localNow, toMinutes } from "../utils/settings";
 const router = Router();
 router.use(requireAuth, requireManager);
 
-// Admin dashboard: today's numbers + quick alerts
 router.get("/", async (req: AuthedRequest, res: Response) => {
   const settings = await getSettings();
   const now = localNow(settings);

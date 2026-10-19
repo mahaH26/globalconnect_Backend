@@ -16,8 +16,6 @@ interface ProfileLite {
   level_since: string;
 }
 
-// Rules: to reach the NEXT level, an employee needs min_points of attendance points
-// and min_months spent in their CURRENT level (both values are set on the next level).
 export function computeProgress(
   profile: ProfileLite,
   levels: Level[],
@@ -76,7 +74,6 @@ export async function getProgress(userId: string) {
   );
 }
 
-// Call after points change. Alerts admins once per level when someone becomes eligible.
 export async function notifyIfEligible(userId: string) {
   const progress = await getProgress(userId);
   if (!progress || !progress.eligible || !progress.next_level) return;

@@ -7,7 +7,6 @@ import { eachDate, weekdayOf, lastDayOfMonth } from "../utils/dates";
 const router = Router();
 router.use(requireAuth);
 
-// My monthly summary: GET /attendance/me/summary?month=YYYY-MM
 router.get("/me/summary", async (req: AuthedRequest, res: Response) => {
   const settings = await getSettings();
   const now = localNow(settings);
@@ -18,7 +17,7 @@ router.get("/me/summary", async (req: AuthedRequest, res: Response) => {
 
   const first = `${month}-01`;
   const last = lastDayOfMonth(month);
-  const upTo = last < now.date ? last : now.date; // never count future days
+  const upTo = last < now.date ? last : now.date;
   const userId = req.user!.id;
 
   const [attR, leaveR, ptsR] = await Promise.all([
@@ -52,7 +51,6 @@ router.get("/me/summary", async (req: AuthedRequest, res: Response) => {
       .map((r: { work_date: string }) => r.work_date),
   );
 
-  // Approved leave days that fall on working days inside the month
   const leaveDates = new Set<string>();
   for (const l of leaveR.data ?? []) {
     const from = l.start_date > first ? l.start_date : first;
@@ -69,7 +67,7 @@ router.get("/me/summary", async (req: AuthedRequest, res: Response) => {
       if (settings.weekend_days.includes(weekdayOf(d))) continue;
       if (leaveDates.has(d) && !attendedDates.has(d)) continue;
       if (d === now.date && now.minutes <= cutoff && !attendedDates.has(d))
-        continue; // day not over yet
+        continue;
       expected++;
       if (!attendedDates.has(d)) absent++;
     }

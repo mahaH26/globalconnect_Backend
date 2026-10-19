@@ -1,4 +1,3 @@
-// Haversine distance in meters between two GPS points
 export function distanceMeters(
   lat1: number,
   lon1: number,

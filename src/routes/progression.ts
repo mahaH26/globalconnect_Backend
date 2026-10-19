@@ -28,14 +28,10 @@ async function overview(userId: string) {
   return { progress, history: history.data, milestones: milestones.data };
 }
 
-// My progress: level, points, eligibility, history, milestones
 router.get("/me", async (req: AuthedRequest, res: Response) => {
   res.json(await overview(req.user!.id));
 });
 
-// ---- admin only ----
-
-// Everyone, with progress (for the Progression screen)
 router.get(
   "/employees",
   requireManager,
@@ -84,7 +80,6 @@ router.get(
   },
 );
 
-// Promote to the next level (must be eligible unless force=true)
 router.post(
   "/promote/:id",
   requireManager,
@@ -144,7 +139,6 @@ router.post(
   },
 );
 
-// Record a milestone
 router.post(
   "/milestones/:id",
   requireManager,
