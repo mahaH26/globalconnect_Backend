@@ -47,15 +47,23 @@ router.post("/", async (req: AuthedRequest, res: Response) => {
     email,
     password,
     email_confirm: true,
-    user_metadata: { full_name: profile.full_name },
+    user_metadata: {
+      full_name: profile.full_name,
+      display_name: profile.full_name,
+    },
   });
   if (error) return res.status(400).json({ error: error.message });
 
   const { error: upErr } = await supabase
     .from("profiles")
-    .update({ ...profile, role })
-    .eq("id", data.user.id);
-  if (upErr) throw upErr;
+    .upsert(
+      { id: data.user.id, email, ...profile, role },
+      { onConflict: "id" },
+    );
+  if (upErr) {
+    await supabase.auth.admin.deleteUser(data.user.id);
+    return res.status(400).json({ error: upErr.message });
+  }
   res.status(201).json({ id: data.user.id, email });
 });
 
@@ -110,6 +118,15 @@ router.patch("/:id", async (req: AuthedRequest, res: Response) => {
     .maybeSingle();
   if (error) throw error;
   if (!data) return res.status(404).json({ error: "Employee not found" });
+
+  if (changes.full_name) {
+    await supabase.auth.admin.updateUserById(id, {
+      user_metadata: {
+        full_name: changes.full_name,
+        display_name: changes.full_name,
+      },
+    });
+  }
 
   if (changes.employment_status) {
     await setLoginEnabled(

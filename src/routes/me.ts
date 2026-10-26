@@ -1,4 +1,5 @@
 import { Router, Response } from "express";
+import { createHash } from "crypto";
 import { supabase } from "../config/supabase";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 
@@ -16,7 +17,7 @@ router.get("/", async (req: AuthedRequest, res: Response) => {
 });
 
 router.patch("/", async (req: AuthedRequest, res: Response) => {
-  const updates: Record<string, string> = {};
+  const updates: Record<string, string | null> = {};
 
   if (req.body?.full_name !== undefined) {
     const fullName = String(req.body.full_name).trim().replace(/\s+/g, " ");
@@ -54,6 +55,19 @@ router.patch("/", async (req: AuthedRequest, res: Response) => {
     updates.email = email;
   }
 
+  if (req.body?.avatar_url !== undefined) {
+    if (req.body.avatar_url === null || req.body.avatar_url === "") {
+      updates.avatar_url = null;
+    } else {
+      const url = String(req.body.avatar_url);
+      const prefix = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/`;
+      if (!url.startsWith(prefix)) {
+        return res.status(400).json({ error: "Invalid image address." });
+      }
+      updates.avatar_url = url;
+    }
+  }
+
   if (!Object.keys(updates).length) {
     return res.status(400).json({ error: "Nothing to update." });
   }
@@ -65,7 +79,42 @@ router.patch("/", async (req: AuthedRequest, res: Response) => {
     .select()
     .single();
   if (error) throw error;
+
+  if (updates.full_name) {
+    await supabase.auth.admin.updateUserById(req.user!.id, {
+      user_metadata: {
+        full_name: updates.full_name,
+        display_name: updates.full_name,
+      },
+    });
+  }
+
   res.json(data);
+});
+
+router.post("/avatar-signature", async (req: AuthedRequest, res: Response) => {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  if (!cloudName || !apiKey || !apiSecret) {
+    return res.status(500).json({ error: "Image upload is not configured." });
+  }
+
+  const timestamp = Math.floor(Date.now() / 1000);
+  const publicId = `global-connect/avatars/${req.user!.id}`;
+  const toSign = `overwrite=true&public_id=${publicId}&timestamp=${timestamp}`;
+  const signature = createHash("sha1")
+    .update(toSign + apiSecret)
+    .digest("hex");
+
+  res.json({
+    cloud_name: cloudName,
+    api_key: apiKey,
+    timestamp,
+    public_id: publicId,
+    overwrite: "true",
+    signature,
+  });
 });
 
 router.get("/progression", async (req: AuthedRequest, res: Response) => {

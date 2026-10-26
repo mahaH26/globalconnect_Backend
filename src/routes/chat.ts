@@ -21,7 +21,7 @@ async function isMember(conversationId: string, userId: string) {
 router.get("/people", async (req: AuthedRequest, res: Response) => {
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, role")
+    .select("id, full_name, role, avatar_url")
     .neq("id", req.user!.id)
     .order("full_name");
   if (error) return res.status(500).json({ error: error.message });
@@ -43,7 +43,7 @@ router.get("/conversations", async (req: AuthedRequest, res: Response) => {
     supabase.from("conversations").select("id, type, name").in("id", ids),
     supabase
       .from("conversation_members")
-      .select("conversation_id, user_id, profiles(full_name)")
+      .select("conversation_id, user_id, profiles(full_name, avatar_url)")
       .in("conversation_id", ids),
     supabase
       .from("messages")
@@ -72,6 +72,8 @@ router.get("/conversations", async (req: AuthedRequest, res: Response) => {
       type: c.type,
       name:
         c.type === "group" ? c.name : (otherProfile?.full_name ?? "Unknown"),
+      avatar_url:
+        c.type === "direct" ? (otherProfile?.avatar_url ?? null) : null,
       member_count: mem.length,
       last_message: last?.body ?? null,
       last_at: last?.created_at ?? null,
@@ -176,13 +178,15 @@ router.get(
 
     const { data: members } = await supabase
       .from("conversation_members")
-      .select("user_id, profiles(full_name)")
+      .select("user_id, profiles(full_name, avatar_url)")
       .eq("conversation_id", id.data);
 
     const names = new Map<string, string>();
+    const avatars = new Map<string, string | null>();
     for (const m of (members ?? []) as any[]) {
       const p = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles;
       names.set(m.user_id, p?.full_name ?? "Unknown");
+      avatars.set(m.user_id, p?.avatar_url ?? null);
     }
 
     await supabase
@@ -196,6 +200,7 @@ router.get(
       members: [...names.entries()].map(([user_id, full_name]) => ({
         user_id,
         full_name,
+        avatar_url: avatars.get(user_id) ?? null,
       })),
       messages: (msgs ?? []).map((m) => ({
         ...m,
