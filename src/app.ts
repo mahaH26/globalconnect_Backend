@@ -14,6 +14,7 @@ import notifications from "./routes/notifications";
 import chat from "./routes/chat";
 import insights from "./routes/insights";
 import reports from "./routes/reports";
+import assistant from "./routes/assistant";
 import locations from "./routes/locations";
 const app = express();
 app.use(cors());
@@ -34,7 +35,7 @@ app.use("/chat", chat);
 app.use("/insights", insights);
 app.use("/reports", reports);
 app.use("/locations", locations);
-
+app.use("/assistant", assistant);
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   console.error(err);
   res.status(500).json({ error: "Server error" });
